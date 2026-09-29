@@ -1,37 +1,18 @@
 import { useLoaderData, Link } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
-import {
-  getSubmission,
-  parseSubmissionFields,
-} from "../services/submissions.server";
+import { getSubmission } from "../services/submissions.server";
 
 export const loader = async ({ request, params }) => {
-  const { session } = await authenticate.admin(request);
-  const submission = await getSubmission(session.shop, params.id);
+  const { admin } = await authenticate.admin(request);
+  const id = decodeURIComponent(params.id || "");
+  const submission = await getSubmission(admin, id);
 
   if (!submission) {
     throw new Response("Submission not found", { status: 404 });
   }
 
-  return {
-    submission: {
-      id: submission.id,
-      formKey: submission.formKey,
-      createdAt: submission.createdAt,
-      customerId: submission.customerId,
-      fields: parseSubmissionFields(submission),
-      files: submission.files.map((file) => ({
-        id: file.id,
-        fieldName: file.fieldName,
-        filename: file.filename,
-        mimeType: file.mimeType,
-        size: file.size,
-        url: file.url,
-        shopifyFileId: file.shopifyFileId,
-      })),
-    },
-  };
+  return { submission };
 };
 
 function formatDate(value) {
@@ -60,7 +41,7 @@ export default function SubmissionDetail() {
   const fieldEntries = Object.entries(submission.fields || {});
 
   return (
-    <s-page heading={submission.formKey}>
+    <s-page heading={submission.formKey || "Submission"}>
       <s-link slot="breadcrumb-actions" href="/app">
         Submissions
       </s-link>
@@ -77,7 +58,7 @@ export default function SubmissionDetail() {
             </s-text>
           ) : null}
           <s-text>
-            <s-text type="strong">Submission ID:</s-text> {submission.id}
+            <s-text type="strong">Metaobject ID:</s-text> {submission.id}
           </s-text>
         </s-stack>
       </s-section>
@@ -104,9 +85,9 @@ export default function SubmissionDetail() {
           <s-paragraph>No files were uploaded.</s-paragraph>
         ) : (
           <s-stack direction="block" gap="base">
-            {submission.files.map((file) => (
+            {submission.files.map((file, index) => (
               <s-box
-                key={file.id}
+                key={`${file.shopifyFileId || file.url || index}`}
                 padding="base"
                 border="base"
                 borderRadius="base"
@@ -116,7 +97,7 @@ export default function SubmissionDetail() {
                     {file.fieldName}: {file.filename}
                   </s-text>
                   <s-text>
-                    {file.mimeType} · {formatBytes(file.size)}
+                    {file.mimeType} · {formatBytes(file.size || 0)}
                   </s-text>
                   {isImage(file.mimeType) && file.url ? (
                     <s-box>

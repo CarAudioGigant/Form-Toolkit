@@ -1,4 +1,3 @@
-import prisma from "../db.server";
 import { assertShopifyStagedResourceUrl } from "./installed-shop.server";
 import {
   MAX_FIELD_KEYS,
@@ -9,7 +8,76 @@ import {
   assertFileSize,
 } from "./upload-limits.server";
 
+/** App-owned metaobject type from shopify.app.toml `[metaobjects.app.form_submission]` */
+export const FORM_SUBMISSION_TYPE = "$app:form_submission";
+
 const PAGE_SIZE = 25;
+
+const METAOBJECT_CREATE = `#graphql
+  mutation MetaobjectCreate($metaobject: MetaobjectCreateInput!) {
+    metaobjectCreate(metaobject: $metaobject) {
+      metaobject {
+        id
+        handle
+        type
+        updatedAt
+        fields {
+          key
+          value
+        }
+      }
+      userErrors {
+        field
+        message
+        code
+      }
+    }
+  }
+`;
+
+const METAOBJECTS_LIST = `#graphql
+  query FormSubmissions($type: String!, $first: Int!, $after: String) {
+    metaobjects(
+      type: $type
+      first: $first
+      after: $after
+      reverse: true
+      sortKey: "updated_at"
+    ) {
+      edges {
+        cursor
+        node {
+          id
+          handle
+          updatedAt
+          fields {
+            key
+            value
+          }
+        }
+      }
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+    }
+  }
+`;
+
+const METAOBJECT_GET = `#graphql
+  query FormSubmission($id: ID!) {
+    metaobject(id: $id) {
+      id
+      handle
+      type
+      updatedAt
+      fields {
+        key
+        value
+      }
+    }
+  }
+`;
 
 export function sanitizeFormKey(formKey) {
   if (!formKey || typeof formKey !== "string") {
@@ -83,8 +151,56 @@ export function sanitizeIncomingFiles(files) {
   });
 }
 
-export async function createSubmission({
-  shop,
+function fieldsMap(metaobject) {
+  /** @type {Record<string, string>} */
+  const map = {};
+  for (const field of metaobject?.fields || []) {
+    if (field?.key) map[field.key] = field.value ?? "";
+  }
+  return map;
+}
+
+function parseJsonField(raw, fallback) {
+  if (!raw) return fallback;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return fallback;
+  }
+}
+
+export function normalizeSubmission(metaobject) {
+  if (!metaobject?.id) return null;
+  const map = fieldsMap(metaobject);
+  const fields = parseJsonField(map.fields_json, {});
+  const files = parseJsonField(map.files_json, []);
+
+  return {
+    id: metaobject.id,
+    handle: metaobject.handle,
+    formKey: map.form_key || "",
+    createdAt: map.submitted_at || metaobject.updatedAt,
+    customerId: map.customer_id || null,
+    ip: map.ip || null,
+    userAgent: map.user_agent || null,
+    fields:
+      fields && typeof fields === "object" && !Array.isArray(fields)
+        ? fields
+        : {},
+    files: Array.isArray(files) ? files : [],
+    fieldCount:
+      fields && typeof fields === "object" && !Array.isArray(fields)
+        ? Object.keys(fields).length
+        : 0,
+    fileCount: Array.isArray(files) ? files.length : 0,
+  };
+}
+
+/**
+ * Persist a submission as an app-owned Shopify metaobject.
+ * @param {import("@shopify/shopify-app-react-router/server").AdminApiContext} admin
+ */
+export async function createSubmission(admin, {
   formKey,
   fields,
   files,
@@ -92,76 +208,97 @@ export async function createSubmission({
   ip,
   userAgent,
 }) {
-  return prisma.formSubmission.create({
-    data: {
-      shop,
-      formKey,
-      fields: JSON.stringify(fields),
-      customerId: customerId || null,
-      ip: ip || null,
-      userAgent: userAgent || null,
-      files: {
-        create: files.map((file) => ({
-          fieldName: file.fieldName,
-          filename: file.filename,
-          mimeType: file.mimeType,
-          size: file.size,
-          shopifyFileId: file.shopifyFileId,
-          url: file.url,
-        })),
+  const submittedAt = new Date().toISOString();
+  const response = await admin.graphql(METAOBJECT_CREATE, {
+    variables: {
+      metaobject: {
+        type: FORM_SUBMISSION_TYPE,
+        fields: [
+          { key: "form_key", value: formKey },
+          { key: "fields_json", value: JSON.stringify(fields) },
+          { key: "files_json", value: JSON.stringify(files) },
+          { key: "customer_id", value: customerId || "" },
+          { key: "submitted_at", value: submittedAt },
+          { key: "ip", value: ip || "" },
+          { key: "user_agent", value: (userAgent || "").slice(0, 500) },
+        ],
       },
     },
-    include: { files: true },
   });
+
+  const json = await response.json();
+  const payload = json.data?.metaobjectCreate;
+  const errors = payload?.userErrors;
+  if (errors?.length) {
+    throw new Error(errors.map((e) => e.message).join("; "));
+  }
+
+  const metaobject = payload?.metaobject;
+  if (!metaobject?.id) {
+    throw new Error("metaobjectCreate did not return a metaobject");
+  }
+
+  return normalizeSubmission(metaobject);
 }
 
-export async function listSubmissions(shop, { page = 1 } = {}) {
-  const safePage = Math.max(1, Number(page) || 1);
-  const skip = (safePage - 1) * PAGE_SIZE;
+/**
+ * @param {import("@shopify/shopify-app-react-router/server").AdminApiContext} admin
+ */
+export async function listSubmissions(admin, { cursor = null } = {}) {
+  const response = await admin.graphql(METAOBJECTS_LIST, {
+    variables: {
+      type: FORM_SUBMISSION_TYPE,
+      first: PAGE_SIZE,
+      after: cursor || null,
+    },
+  });
 
-  const [total, submissions] = await Promise.all([
-    prisma.formSubmission.count({ where: { shop } }),
-    prisma.formSubmission.findMany({
-      where: { shop },
-      orderBy: { createdAt: "desc" },
-      skip,
-      take: PAGE_SIZE,
-      include: {
-        files: true,
-        _count: { select: { files: true } },
-      },
-    }),
-  ]);
+  const json = await response.json();
+  const connection = json.data?.metaobjects;
+  const edges = connection?.edges || [];
+  const pageInfo = connection?.pageInfo || {};
 
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const submissions = edges
+    .map((edge) => normalizeSubmission(edge.node))
+    .filter(Boolean);
 
   return {
     submissions,
     pagination: {
-      page: safePage,
       pageSize: PAGE_SIZE,
-      total,
-      totalPages,
-      hasNext: safePage < totalPages,
-      hasPrev: safePage > 1,
+      hasNext: Boolean(pageInfo.hasNextPage),
+      endCursor: pageInfo.endCursor || null,
+      nextCursor: pageInfo.hasNextPage ? pageInfo.endCursor : null,
     },
   };
 }
 
-export async function getSubmission(shop, id) {
-  return prisma.formSubmission.findFirst({
-    where: { id, shop },
-    include: { files: true },
+/**
+ * @param {import("@shopify/shopify-app-react-router/server").AdminApiContext} admin
+ */
+export async function getSubmission(admin, id) {
+  if (!id || typeof id !== "string") return null;
+
+  const response = await admin.graphql(METAOBJECT_GET, {
+    variables: { id },
   });
+  const json = await response.json();
+  const metaobject = json.data?.metaobject;
+  if (!metaobject || metaobject.type !== FORM_SUBMISSION_TYPE) {
+    // type may be returned as app--xxx--form_submission in some API versions
+    if (!metaobject?.id) return null;
+    if (
+      metaobject.type &&
+      !String(metaobject.type).includes("form_submission")
+    ) {
+      return null;
+    }
+  }
+  return normalizeSubmission(metaobject);
 }
 
 export function parseSubmissionFields(submission) {
-  try {
-    const parsed = JSON.parse(submission.fields || "{}");
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-      ? parsed
-      : {};
-  } catch {
-    return {};
-  }
+  return submission?.fields && typeof submission.fields === "object"
+    ? submission.fields
+    : {};
 }

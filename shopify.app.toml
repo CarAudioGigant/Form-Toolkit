@@ -7,12 +7,50 @@ embedded = true
 
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
-scopes = "write_files,write_app_proxy"
+scopes = "write_files,write_app_proxy,read_metaobjects,write_metaobjects"
 
 [app_proxy]
 url = "/apps/forms"
 prefix = "apps"
 subpath = "forms"
+
+[metaobjects.app.form_submission]
+name = "Form Submission"
+description = "Storefront form gateway submissions (fields + uploaded files)"
+
+  [metaobjects.app.form_submission.access]
+  admin = "merchant_read"
+
+[metaobjects.app.form_submission.fields.form_key]
+name = "Form key"
+type = "single_line_text_field"
+required = true
+
+[metaobjects.app.form_submission.fields.fields_json]
+name = "Fields JSON"
+type = "json"
+required = true
+
+[metaobjects.app.form_submission.fields.files_json]
+name = "Files JSON"
+type = "json"
+
+[metaobjects.app.form_submission.fields.customer_id]
+name = "Customer ID"
+type = "single_line_text_field"
+
+[metaobjects.app.form_submission.fields.submitted_at]
+name = "Submitted at"
+type = "date_time"
+required = true
+
+[metaobjects.app.form_submission.fields.ip]
+name = "IP"
+type = "single_line_text_field"
+
+[metaobjects.app.form_submission.fields.user_agent]
+name = "User agent"
+type = "single_line_text_field"
 
 [webhooks]
 api_version = "2026-10"
@@ -33,5 +71,4 @@ redirect_urls = [
 ]
 
 [build]
-include_config_on_deploy = true
 automatically_update_urls_on_dev = true

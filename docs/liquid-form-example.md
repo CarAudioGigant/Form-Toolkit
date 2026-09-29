@@ -66,7 +66,7 @@ Add `data-forms-gateway`, a hidden `form_key`, and keep any fields/files you alr
 1. JS reads all non-file fields.
 2. For each selected file it calls `/apps/forms/staged-upload`, then uploads bytes to Shopify’s staging URL.
 3. It POSTs JSON to `/apps/forms/submit` with `form_key`, `fields`, and staged `resourceUrl`s.
-4. The app creates Shopify Files server-side and stores the submission in Prisma.
+4. The app creates Shopify Files server-side and stores the submission as an **app-owned metaobject** (`$app:form_submission`).
 
 Optional events:
 

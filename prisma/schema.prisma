@@ -32,33 +32,3 @@ model Session {
   refreshToken        String?
   refreshTokenExpires DateTime?
 }
-
-model FormSubmission {
-  id         String               @id @default(cuid())
-  shop       String
-  formKey    String
-  fields     String
-  customerId String?
-  ip         String?
-  userAgent  String?
-  createdAt  DateTime             @default(now())
-  files      FormSubmissionFile[]
-
-  @@index([shop, createdAt])
-  @@index([shop, formKey])
-}
-
-model FormSubmissionFile {
-  id            String         @id @default(cuid())
-  submissionId  String
-  submission    FormSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
-  fieldName     String
-  filename      String
-  mimeType      String
-  size          Int
-  shopifyFileId String
-  url           String
-  createdAt     DateTime       @default(now())
-
-  @@index([submissionId])
-}

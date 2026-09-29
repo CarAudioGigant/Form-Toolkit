@@ -17,6 +17,7 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 ENV PORT=3000
+ENV DATABASE_URL=file:/data/prod.sqlite
 
 COPY --from=build /app /app
 

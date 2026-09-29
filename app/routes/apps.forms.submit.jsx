@@ -70,8 +70,7 @@ export const action = async ({ request }) => {
     const url = new URL(request.url);
     const customerId = url.searchParams.get("logged_in_customer_id") || null;
 
-    const submission = await createSubmission({
-      shop,
+    const submission = await createSubmission(admin, {
       formKey,
       fields,
       files: createdFiles,
@@ -88,7 +87,6 @@ export const action = async ({ request }) => {
       },
       {
         headers: {
-          // One-shot style: clear session after successful submit; next form needs re-bootstrap.
           "Set-Cookie": clearGatewaySessionCookie(),
           "Cache-Control": "no-store",
         },

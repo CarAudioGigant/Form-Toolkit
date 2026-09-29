@@ -24,7 +24,7 @@ services:
       - key: DATABASE_URL
         value: file:/data/prod.sqlite
       - key: SCOPES
-        value: write_files,write_app_proxy
+        value: write_files,write_app_proxy,read_metaobjects,write_metaobjects
       # Set these in the Render Dashboard (do not commit secrets):
       - key: SHOPIFY_API_KEY
         sync: false

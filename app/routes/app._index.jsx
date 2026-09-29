@@ -1,33 +1,18 @@
 import { useLoaderData, Link } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
-import {
-  listSubmissions,
-  parseSubmissionFields,
-} from "../services/submissions.server";
+import { listSubmissions } from "../services/submissions.server";
 
 export const loader = async ({ request }) => {
-  const { session } = await authenticate.admin(request);
+  const { admin } = await authenticate.admin(request);
   const url = new URL(request.url);
-  const page = Number(url.searchParams.get("page") || "1");
+  const cursor = url.searchParams.get("cursor");
 
-  const { submissions, pagination } = await listSubmissions(session.shop, {
-    page,
+  const { submissions, pagination } = await listSubmissions(admin, {
+    cursor,
   });
 
-  return {
-    submissions: submissions.map((submission) => {
-      const fields = parseSubmissionFields(submission);
-      return {
-        id: submission.id,
-        formKey: submission.formKey,
-        createdAt: submission.createdAt,
-        fieldCount: Object.keys(fields).length,
-        fileCount: submission._count?.files ?? submission.files?.length ?? 0,
-      };
-    }),
-    pagination,
-  };
+  return { submissions, pagination };
 };
 
 function formatDate(value) {
@@ -48,7 +33,8 @@ export default function SubmissionsIndex() {
     <s-page heading="Form submissions">
       <s-section>
         <s-paragraph>
-          Submissions from storefront Liquid forms via the app proxy gateway.
+          Submissions stored as Shopify metaobjects (plus files in Content →
+          Files).
         </s-paragraph>
       </s-section>
 
@@ -80,7 +66,9 @@ export default function SubmissionsIndex() {
                     <s-table-cell>{submission.fieldCount}</s-table-cell>
                     <s-table-cell>{submission.fileCount}</s-table-cell>
                     <s-table-cell>
-                      <Link to={`/app/submissions/${submission.id}`}>
+                      <Link
+                        to={`/app/submissions/${encodeURIComponent(submission.id)}`}
+                      >
                         View
                       </Link>
                     </s-table-cell>
@@ -92,22 +80,15 @@ export default function SubmissionsIndex() {
         )}
       </s-section>
 
-      {pagination.total > 0 && (
+      {pagination.hasNext ? (
         <s-section>
           <s-stack direction="inline" gap="base">
-            <s-text>
-              Page {pagination.page} of {pagination.totalPages} ({pagination.total}{" "}
-              total)
-            </s-text>
-            {pagination.hasPrev ? (
-              <Link to={`/app?page=${pagination.page - 1}`}>Previous</Link>
-            ) : null}
-            {pagination.hasNext ? (
-              <Link to={`/app?page=${pagination.page + 1}`}>Next</Link>
-            ) : null}
+            <Link to={`/app?cursor=${encodeURIComponent(pagination.nextCursor)}`}>
+              Next page
+            </Link>
           </s-stack>
         </s-section>
-      )}
+      ) : null}
     </s-page>
   );
 }
