@@ -2,7 +2,7 @@
 
 client_id = "48e18e86b38a65a095633300bd60a1ee"
 name = "CarAudioGigant Forms Toolkit"
-application_url = "https://example.com"
+application_url = "https://caraudiogigant-form-toolkit.onrender.com"
 embedded = true
 
 [access_scopes]
@@ -26,7 +26,11 @@ api_version = "2026-10"
   topics = [ "app/scopes_update" ]
 
 [auth]
-redirect_urls = [ "https://example.com/api/auth" ]
+redirect_urls = [
+  "https://caraudiogigant-form-toolkit.onrender.com/auth/callback",
+  "https://caraudiogigant-form-toolkit.onrender.com/auth/shopify/callback",
+  "https://caraudiogigant-form-toolkit.onrender.com/api/auth/callback"
+]
 
 [build]
 include_config_on_deploy = true

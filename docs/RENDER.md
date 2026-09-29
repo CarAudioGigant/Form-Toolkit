@@ -1,56 +1,29 @@
 # Deploy on Render
 
-This Shopify app is set up for **Render** (Docker + persistent disk for SQLite).
-
+Live service: **https://caraudiogigant-form-toolkit.onrender.com**  
+Dashboard: https://dashboard.render.com/web/srv-dats2j8jo6nc73c96vn0  
+Project: CarAudioGigant Form Toolkit  
 Repo: https://github.com/CarAudioGigant/Form-Toolkit  
-Blueprint: [`render.yaml`](../render.yaml)
 
-## 1. Connect the service
+## Configured
 
-If you already created **CarAudioGigant Form Toolkit** in Render:
+- Docker web service (`caraudiogigant-form-toolkit`)
+- Persistent disk at `/data` (`DATABASE_URL=file:/data/prod.sqlite`)
+- Env: `SHOPIFY_API_KEY`, `SHOPIFY_API_SECRET`, `SCOPES`, `SHOPIFY_APP_URL`, `NODE_ENV`, `PORT`
+- Auto-deploy on push to `main`
 
-1. Link the GitHub repo `CarAudioGigant/Form-Toolkit` (branch `main`).
-2. Runtime: **Docker** (uses the repo `Dockerfile`).
-3. Attach a **persistent disk** at mount path `/data` (required — SQLite must survive deploys).
-4. Health check path: `/`
+## Shopify URLs
 
-Or create from Blueprint: Dashboard → **New** → **Blueprint** → select this repo.
+`shopify.app.toml` points at the Render hostname for `application_url` and auth redirects.
 
-## 2. Environment variables
+## After deploy is live
 
-| Key | Value |
-|-----|--------|
-| `NODE_ENV` | `production` |
-| `PORT` | `3000` (or leave Render default and ensure the app reads `PORT`) |
-| `DATABASE_URL` | `file:/data/prod.sqlite` |
-| `SCOPES` | `write_files,write_app_proxy` |
-| `SHOPIFY_API_KEY` | From Partner Dashboard → App → Client ID |
-| `SHOPIFY_API_SECRET` | From Partner Dashboard → App → Client secret |
-| `SHOPIFY_APP_URL` | Your Render URL, e.g. `https://caraudiogigant-form-toolkit.onrender.com` |
+1. Open https://caraudiogigant-form-toolkit.onrender.com
+2. Install / open the app on the shop
+3. Wire Liquid forms with `forms-gateway.js`
 
-No trailing slash on `SHOPIFY_APP_URL`.
+## Note on GitHub visibility
 
-## 3. Point Shopify at Render
-
-In Partner Dashboard / `shopify.app.toml` (then `shopify app deploy`):
-
-- **App URL** = `SHOPIFY_APP_URL`
-- **Allowed redirection URL(s)** = `{SHOPIFY_APP_URL}/auth/callback` (and related auth paths Shopify lists)
-- App proxy stays `prefix=apps` / `subpath=forms` → storefront `/apps/forms/*`
-
-## 4. After first deploy
-
-1. Open the Render URL — you should see the login / app landing page.
-2. Install the app on the shop (OAuth).
-3. Confirm admin **Submissions** loads.
-4. Wire Liquid forms with `forms-gateway.js` (see [liquid-form-example.md](./liquid-form-example.md)).
-
-## Local vs Render DB
-
-- Local: `DATABASE_URL=file:./dev.sqlite` (see `.env.example`)
-- Render: `DATABASE_URL=file:/data/prod.sqlite` on the persistent disk
-
-## Notes
-
-- Free/web instances without a disk lose the SQLite file on every deploy — use the disk.
-- For multi-instance scaling later, switch Prisma to Postgres and drop the disk.
+The repo was made **public** so Render could clone it (Render GitHub App only had access to selected private repos). To make it private again: add `Form-Toolkit` under  
+https://github.com/organizations/CarAudioGigant/settings/installations/160341208  
+then set the repo private.
