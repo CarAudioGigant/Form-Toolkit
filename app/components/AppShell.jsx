@@ -26,21 +26,6 @@ const NAV = [
     ),
   },
   {
-    to: "/app/settings",
-    label: "Settings",
-    icon: (
-      <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
-        <path
-          d="M8.2 2.8h3.6l.4 1.7a5.6 5.6 0 0 1 1.4.8l1.7-.5 1.8 3.1-1.3 1.2c.1.5.1.9 0 1.4l1.3 1.2-1.8 3.1-1.7-.5a5.6 5.6 0 0 1-1.4.8l-.4 1.7H8.2l-.4-1.7a5.6 5.6 0 0 1-1.4-.8l-1.7.5-1.8-3.1 1.3-1.2a5.7 5.7 0 0 1 0-1.4L3.3 7.9l1.8-3.1 1.7.5c.4-.3.9-.6 1.4-.8l.4-1.7Z"
-          stroke="currentColor"
-          strokeWidth="1.4"
-          strokeLinejoin="round"
-        />
-        <circle cx="10" cy="10" r="2.2" stroke="currentColor" strokeWidth="1.4" />
-      </svg>
-    ),
-  },
-  {
     to: "/app/installation",
     label: "Installation",
     icon: (
@@ -52,22 +37,6 @@ const NAV = [
           strokeLinecap="round"
           strokeLinejoin="round"
         />
-      </svg>
-    ),
-  },
-  {
-    to: "/app/help",
-    label: "Help & Support",
-    icon: (
-      <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
-        <circle cx="10" cy="10" r="7.25" stroke="currentColor" strokeWidth="1.5" />
-        <path
-          d="M7.8 7.8a2.3 2.3 0 0 1 4.4.9c0 1.4-1.3 1.9-2.2 2.4"
-          stroke="currentColor"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-        />
-        <circle cx="10" cy="14.1" r="0.9" fill="currentColor" />
       </svg>
     ),
   },

@@ -4,7 +4,6 @@ import { SubmissionsPage } from "../components/submissions/SubmissionsPage";
 import { authenticate } from "../shopify.server";
 import {
   deleteSubmissions,
-  getSubmission,
   listSubmissions,
 } from "../services/submissions.server";
 
@@ -18,7 +17,6 @@ export const loader = async ({ request }) => {
   const datePreset = url.searchParams.get("date") || "last30";
   const sort = url.searchParams.get("sort") || "submitted_at";
   const order = url.searchParams.get("order") || "desc";
-  const viewId = url.searchParams.get("view") || "";
 
   try {
     const list = await listSubmissions(admin, {
@@ -31,14 +29,8 @@ export const loader = async ({ request }) => {
       order,
     });
 
-    let selectedSubmission = null;
-    if (viewId) {
-      selectedSubmission = await getSubmission(admin, viewId);
-    }
-
     return {
       ...list,
-      selectedSubmission,
       error: null,
     };
   } catch (error) {
@@ -64,7 +56,6 @@ export const loader = async ({ request }) => {
         hasNext: false,
         hasPrev: false,
       },
-      selectedSubmission: null,
       error: error instanceof Error ? error.message : "Unknown error",
     };
   }
@@ -84,7 +75,6 @@ export const action = async ({ request }) => {
     const referer = request.headers.get("Referer");
     if (referer) {
       const url = new URL(referer);
-      url.searchParams.delete("view");
       return redirect(`${url.pathname}${url.search}`);
     }
     return redirect("/app");
@@ -102,7 +92,6 @@ export default function SubmissionsIndex() {
       filters={data.filters}
       formKeys={data.formKeys}
       totalAll={data.totalAll}
-      selectedSubmission={data.selectedSubmission}
       error={data.error}
     />
   );

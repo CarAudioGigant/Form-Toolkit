@@ -28,7 +28,7 @@ export function sourceTone(source) {
   return "other";
 }
 
-function pickField(fields, keys) {
+export function pickField(fields, keys) {
   if (!fields || typeof fields !== "object") return "";
   const entries = Object.entries(fields);
   for (const key of keys) {

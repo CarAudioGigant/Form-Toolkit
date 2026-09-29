@@ -23,9 +23,7 @@ export default function App() {
     <AppProvider embedded apiKey={apiKey}>
       <s-app-nav>
         <s-link href="/app">Form submissions</s-link>
-        <s-link href="/app/settings">Settings</s-link>
         <s-link href="/app/installation">Installation</s-link>
-        <s-link href="/app/help">Help & Support</s-link>
       </s-app-nav>
       <AppShell shop={shop}>
         <Outlet />

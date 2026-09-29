@@ -363,9 +363,6 @@ export default function InstallationPage() {
           <Link className="cag-btn cag-btn--accent" to="/app">
             View submissions
           </Link>
-          <Link className="cag-btn" to="/app/help">
-            Help & Support
-          </Link>
         </div>
       </div>
     </>

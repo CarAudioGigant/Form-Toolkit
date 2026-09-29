@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useFetcher, useNavigation, useSearchParams } from "react-router";
+import {
+  Link,
+  useFetcher,
+  useNavigate,
+  useNavigation,
+  useSearchParams,
+} from "react-router";
 import { InitialEmptyState, NoMatchingEmptyState } from "./EmptyStates";
 import {
   buildPageItems,
@@ -97,136 +103,16 @@ function buildHref(params, patch) {
   return query ? `/app?${query}` : "/app";
 }
 
+function submissionHref(id) {
+  return `/app/submissions/${encodeURIComponent(id)}`;
+}
+
 function SourceBadge({ source }) {
   const tone = sourceTone(source);
   return <span className={`cag-badge cag-badge--${tone}`}>{source || "Other"}</span>;
 }
 
-function SubmissionDrawer({ submission, onClose }) {
-  if (!submission) return null;
-  const fields = Object.entries(submission.fields || {});
-
-  return (
-    <>
-      <button
-        type="button"
-        className="cag-drawer-backdrop"
-        aria-label="Close submission details"
-        onClick={onClose}
-      />
-      <aside
-        className="cag-drawer"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="cag-drawer-title"
-      >
-        <div className="cag-drawer__header">
-          <div>
-            <h2 id="cag-drawer-title" className="cag-drawer__title">
-              Submission #{submission.displayId}
-            </h2>
-            <p className="cag-drawer__meta">
-              {submission.formName}
-              <br />
-              {formatSubmittedAt(submission.createdAt)}
-            </p>
-          </div>
-          <button
-            type="button"
-            className="cag-drawer__close"
-            onClick={onClose}
-            aria-label="Close"
-          >
-            ✕
-          </button>
-        </div>
-        <div className="cag-drawer__body">
-          <section className="cag-drawer__section">
-            <h3 className="cag-drawer__section-title">Customer</h3>
-            <dl>
-              <div className="cag-drawer__field">
-                <dt>Name</dt>
-                <dd>{submission.name || "—"}</dd>
-              </div>
-              <div className="cag-drawer__field">
-                <dt>Email</dt>
-                <dd>
-                  {submission.email ? (
-                    <a className="cag-email" href={`mailto:${submission.email}`}>
-                      {submission.email}
-                    </a>
-                  ) : (
-                    "—"
-                  )}
-                </dd>
-              </div>
-              {submission.phone ? (
-                <div className="cag-drawer__field">
-                  <dt>Phone</dt>
-                  <dd>{submission.phone}</dd>
-                </div>
-              ) : null}
-            </dl>
-          </section>
-
-          <section className="cag-drawer__section">
-            <h3 className="cag-drawer__section-title">Submission data</h3>
-            {fields.length === 0 ? (
-              <p className="cag-page-desc">No text fields were submitted.</p>
-            ) : (
-              <dl>
-                {fields.map(([key, value]) => (
-                  <div className="cag-drawer__field" key={key}>
-                    <dt>{key}</dt>
-                    <dd>{value || "—"}</dd>
-                  </div>
-                ))}
-              </dl>
-            )}
-          </section>
-
-          <section className="cag-drawer__section">
-            <h3 className="cag-drawer__section-title">Source</h3>
-            <SourceBadge source={submission.source} />
-          </section>
-
-          {submission.files?.length ? (
-            <section className="cag-drawer__section">
-              <h3 className="cag-drawer__section-title">Files</h3>
-              <div className="cag-drawer__files">
-                {submission.files.map((file, index) => (
-                  <div
-                    className="cag-drawer__file"
-                    key={`${file.shopifyFileId || file.url || index}`}
-                  >
-                    <div>
-                      <strong>{file.filename || "Untitled"}</strong>
-                      <div className="cag-mobile-card__meta">
-                        {file.fieldName || "file"}
-                      </div>
-                    </div>
-                    {file.url ? (
-                      <a
-                        className="cag-btn"
-                        href={file.url}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        Open
-                      </a>
-                    ) : null}
-                  </div>
-                ))}
-              </div>
-            </section>
-          ) : null}
-        </div>
-      </aside>
-    </>
-  );
-}
-
-function RowActions({ submission, onView, onDeleted }) {
+function RowActions({ submission, onView }) {
   const [open, setOpen] = useState(false);
   const menuRef = useRef(null);
   const fetcher = useFetcher();
@@ -243,9 +129,8 @@ function RowActions({ submission, onView, onDeleted }) {
   useEffect(() => {
     if (fetcher.state === "idle" && fetcher.data?.ok) {
       setOpen(false);
-      onDeleted?.();
     }
-  }, [fetcher.state, fetcher.data, onDeleted]);
+  }, [fetcher.state, fetcher.data]);
 
   return (
     <div className="cag-actions" ref={menuRef}>
@@ -307,10 +192,10 @@ export function SubmissionsPage({
   filters,
   formKeys,
   totalAll = 0,
-  selectedSubmission,
   error,
 }) {
   const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
   const navigation = useNavigation();
   const bulkFetcher = useFetcher();
   const [query, setQuery] = useState(filters.search || "");
@@ -347,7 +232,6 @@ export function SubmissionsPage({
           if (query) next.set("q", query);
           else next.delete("q");
           next.delete("page");
-          next.delete("view");
           return next;
         },
         { replace: true },
@@ -370,15 +254,9 @@ export function SubmissionsPage({
   );
 
   const openSubmission = useCallback(
-    (id) => updateParam({ view: id, page: pagination.page }),
-    [updateParam, pagination.page],
+    (id) => navigate(submissionHref(id)),
+    [navigate],
   );
-
-  const closeDrawer = useCallback(() => {
-    const next = new URLSearchParams(searchParams);
-    next.delete("view");
-    setSearchParams(next, { replace: true });
-  }, [searchParams, setSearchParams]);
 
   const pageItems = useMemo(
     () => buildPageItems(pagination.page, pagination.totalPages),
@@ -761,10 +639,6 @@ export function SubmissionsPage({
         )}
       </section>
 
-      <SubmissionDrawer
-        submission={selectedSubmission}
-        onClose={closeDrawer}
-      />
     </>
   );
 }
