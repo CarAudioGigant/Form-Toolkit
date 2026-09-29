@@ -1,5 +1,5 @@
-# Shopify app development
+# CarAudioGigant Forms Toolkit
 
-This app is scaffolded from a Shopify app template. See the README for framework-specific details.
+Production Shopify app hosted on Render. Prefer the Shopify AI Toolkit for Admin API / platform work when changing Shopify integrations.
 
-Use the [Shopify AI Toolkit](https://shopify.dev/docs/apps/build/ai-toolkit) for all Shopify API and platform work. If missing, install it in the agent host per that page (or `npx skills add Shopify/shopify-ai-toolkit --list` for skill-compatible hosts) — do not add tooling to this repo.
+See [README.md](./README.md) for production URLs, scopes, and docs.
