@@ -1,205 +1,108 @@
-import { useLoaderData } from "react-router";
+import { useLoaderData, redirect } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
+import { SubmissionsPage } from "../components/submissions/SubmissionsPage";
 import { authenticate } from "../shopify.server";
-import { listSubmissions } from "../services/submissions.server";
-
-function encodeCursorStack(stack) {
-  if (!stack?.length) return "";
-  return Buffer.from(JSON.stringify(stack), "utf8").toString("base64url");
-}
-
-function decodeCursorStack(value) {
-  if (!value) return [];
-  try {
-    const parsed = JSON.parse(
-      Buffer.from(String(value), "base64url").toString("utf8"),
-    );
-    return Array.isArray(parsed)
-      ? parsed.filter((item) => typeof item === "string")
-      : [];
-  } catch {
-    return [];
-  }
-}
+import {
+  deleteSubmissions,
+  getSubmission,
+  listSubmissions,
+} from "../services/submissions.server";
 
 export const loader = async ({ request }) => {
   const { admin } = await authenticate.admin(request);
   const url = new URL(request.url);
-  const stack = decodeCursorStack(url.searchParams.get("stack"));
-  const after = stack.length ? stack[stack.length - 1] : null;
+  const page = Number(url.searchParams.get("page") || "1");
+  const limit = Number(url.searchParams.get("limit") || "10");
+  const search = url.searchParams.get("q") || "";
+  const formKey = url.searchParams.get("form") || "";
+  const datePreset = url.searchParams.get("date") || "last30";
+  const sort = url.searchParams.get("sort") || "submitted_at";
+  const order = url.searchParams.get("order") || "desc";
+  const viewId = url.searchParams.get("view") || "";
 
-  const { submissions, pagination } = await listSubmissions(admin, {
-    cursor: after,
-    pageIndex: stack.length,
-  });
+  try {
+    const list = await listSubmissions(admin, {
+      page,
+      limit,
+      search,
+      formKey,
+      datePreset,
+      sort,
+      order,
+    });
 
-  const nextStack = pagination.nextCursor
-    ? [...stack, pagination.nextCursor]
-    : stack;
-  const prevStack = stack.slice(0, -1);
+    let selectedSubmission = null;
+    if (viewId) {
+      selectedSubmission = await getSubmission(admin, viewId);
+    }
 
-  return {
-    submissions,
-    pagination: {
-      ...pagination,
-      stackParam: encodeCursorStack(stack),
-      nextHref: pagination.hasNext
-        ? `/app?stack=${encodeURIComponent(encodeCursorStack(nextStack))}`
-        : null,
-      prevHref: pagination.hasPrev
-        ? prevStack.length
-          ? `/app?stack=${encodeURIComponent(encodeCursorStack(prevStack))}`
-          : "/app"
-        : null,
-    },
-  };
+    return {
+      ...list,
+      selectedSubmission,
+      error: null,
+    };
+  } catch (error) {
+    console.error("Failed to load submissions", error);
+    return {
+      submissions: [],
+      formKeys: [],
+      filters: {
+        search,
+        formKey,
+        datePreset,
+        sort,
+        order,
+      },
+      pagination: {
+        page: 1,
+        limit: 10,
+        total: 0,
+        totalPages: 1,
+        from: 0,
+        to: 0,
+        hasNext: false,
+        hasPrev: false,
+      },
+      selectedSubmission: null,
+      error: error instanceof Error ? error.message : "Unknown error",
+    };
+  }
 };
 
-function formatDate(value) {
-  try {
-    return new Intl.DateTimeFormat(undefined, {
-      dateStyle: "medium",
-      timeStyle: "short",
-    }).format(new Date(value));
-  } catch {
-    return String(value || "—");
+export const action = async ({ request }) => {
+  const { admin } = await authenticate.admin(request);
+  const formData = await request.formData();
+  const intent = String(formData.get("intent") || "");
+
+  if (intent === "delete") {
+    const ids = formData
+      .getAll("ids")
+      .map((value) => String(value))
+      .filter(Boolean);
+    await deleteSubmissions(admin, ids);
+    const referer = request.headers.get("Referer");
+    if (referer) {
+      const url = new URL(referer);
+      url.searchParams.delete("view");
+      return redirect(`${url.pathname}${url.search}`);
+    }
+    return redirect("/app");
   }
-}
+
+  return Response.json({ ok: false, error: "Unknown intent" }, { status: 400 });
+};
 
 export default function SubmissionsIndex() {
-  const { submissions, pagination } = useLoaderData();
-  const rangeLabel =
-    submissions.length === 0
-      ? "No submissions on this page"
-      : `Showing ${pagination.from}–${pagination.to} · Page ${pagination.pageNumber}`;
-
+  const data = useLoaderData();
   return (
-    <s-page heading="Form submissions">
-      <s-button
-        slot="primary-action"
-        variant="secondary"
-        href="/app"
-        icon="refresh"
-      >
-        Refresh
-      </s-button>
-
-      <s-section>
-        <s-paragraph>
-          Storefront form submissions saved as Shopify metaobjects. Uploaded
-          files live in Content → Files.
-        </s-paragraph>
-      </s-section>
-
-      {submissions.length === 0 && !pagination.hasPrev ? (
-        <s-section>
-          <s-box padding="large" border="base" borderRadius="base" background="subdued">
-            <s-stack direction="block" gap="base" alignItems="center">
-              <s-heading>No submissions yet</s-heading>
-              <s-paragraph>
-                When customers submit a Liquid form through the gateway, entries
-                appear here automatically.
-              </s-paragraph>
-              <s-text color="subdued">
-                Endpoint: <code>/apps/forms/submit</code>
-              </s-text>
-            </s-stack>
-          </s-box>
-        </s-section>
-      ) : (
-        <>
-          <s-section padding="none">
-            <s-table>
-              <s-table-header-row>
-                <s-table-header listSlot="primary">Form</s-table-header>
-                <s-table-header>Submitted</s-table-header>
-                <s-table-header>Fields</s-table-header>
-                <s-table-header>Files</s-table-header>
-                <s-table-header listSlot="secondary"> </s-table-header>
-              </s-table-header-row>
-              <s-table-body>
-                {submissions.map((submission) => {
-                  const viewId = `view-${submission.id.replace(/[^a-zA-Z0-9_-]/g, "")}`;
-                  const href = `/app/submissions/${encodeURIComponent(submission.id)}`;
-                  return (
-                    <s-table-row key={submission.id} clickDelegate={viewId}>
-                      <s-table-cell>
-                        <s-stack direction="block" gap="none">
-                          <s-text type="strong">
-                            {submission.formKey || "Untitled form"}
-                          </s-text>
-                          {submission.customerId ? (
-                            <s-text color="subdued">
-                              Customer {submission.customerId}
-                            </s-text>
-                          ) : (
-                            <s-text color="subdued">Guest</s-text>
-                          )}
-                        </s-stack>
-                      </s-table-cell>
-                      <s-table-cell>{formatDate(submission.createdAt)}</s-table-cell>
-                      <s-table-cell>
-                        <s-badge tone="info">
-                          {submission.fieldCount} field
-                          {submission.fieldCount === 1 ? "" : "s"}
-                        </s-badge>
-                      </s-table-cell>
-                      <s-table-cell>
-                        <s-badge
-                          tone={submission.fileCount > 0 ? "success" : undefined}
-                        >
-                          {submission.fileCount} file
-                          {submission.fileCount === 1 ? "" : "s"}
-                        </s-badge>
-                      </s-table-cell>
-                      <s-table-cell>
-                        <s-button
-                          id={viewId}
-                          href={href}
-                          variant="tertiary"
-                          icon="view"
-                        >
-                          View
-                        </s-button>
-                      </s-table-cell>
-                    </s-table-row>
-                  );
-                })}
-              </s-table-body>
-            </s-table>
-          </s-section>
-
-          <s-section>
-            <s-stack
-              direction="inline"
-              gap="base"
-              justifyContent="space-between"
-              alignItems="center"
-            >
-              <s-text color="subdued">{rangeLabel}</s-text>
-              <s-stack direction="inline" gap="small">
-                <s-button
-                  variant="secondary"
-                  href={pagination.prevHref || undefined}
-                  disabled={!pagination.hasPrev}
-                  icon="chevron-left"
-                >
-                  Previous
-                </s-button>
-                <s-button
-                  variant="secondary"
-                  href={pagination.nextHref || undefined}
-                  disabled={!pagination.hasNext}
-                  icon="chevron-right"
-                >
-                  Next
-                </s-button>
-              </s-stack>
-            </s-stack>
-          </s-section>
-        </>
-      )}
-    </s-page>
+    <SubmissionsPage
+      submissions={data.submissions}
+      pagination={data.pagination}
+      filters={data.filters}
+      formKeys={data.formKeys}
+      selectedSubmission={data.selectedSubmission}
+      error={data.error}
+    />
   );
 }
 

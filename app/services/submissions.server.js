@@ -1,3 +1,12 @@
+import {
+  deriveSource,
+  displaySubmissionId,
+  extractEmail,
+  extractName,
+  extractPhone,
+  humanizeFormKey,
+  resolveDateRange,
+} from "../components/submissions/helpers";
 import { assertShopifyStagedResourceUrl } from "./installed-shop.server";
 import {
   MAX_FIELD_KEYS,
@@ -11,7 +20,23 @@ import {
 /** App-owned metaobject type from shopify.app.toml `[metaobjects.app.form_submission]` */
 export const FORM_SUBMISSION_TYPE = "$app:form_submission";
 
-const PAGE_SIZE = 25;
+const DEFAULT_PAGE_SIZE = 10;
+const MAX_PAGE_SIZE = 50;
+const MAX_SCAN = 500;
+const SCAN_BATCH = 50;
+
+const METAOBJECT_DELETE = `#graphql
+  mutation MetaobjectDelete($id: ID!) {
+    metaobjectDelete(id: $id) {
+      deletedId
+      userErrors {
+        field
+        message
+        code
+      }
+    }
+  }
+`;
 
 const METAOBJECT_CREATE = `#graphql
   mutation MetaobjectCreate($metaobject: MetaobjectCreateInput!) {
@@ -174,26 +199,132 @@ export function normalizeSubmission(metaobject) {
   const map = fieldsMap(metaobject);
   const fields = parseJsonField(map.fields_json, {});
   const files = parseJsonField(map.files_json, []);
+  const safeFields =
+    fields && typeof fields === "object" && !Array.isArray(fields)
+      ? fields
+      : {};
+  const safeFiles = Array.isArray(files) ? files : [];
+  const formKey = map.form_key || "";
+  const name = extractName(safeFields);
+  const email = extractEmail(safeFields);
+  const phone = extractPhone(safeFields);
+  const source = deriveSource(formKey);
 
   return {
     id: metaobject.id,
     handle: metaobject.handle,
-    formKey: map.form_key || "",
+    formKey,
+    formName: humanizeFormKey(formKey),
+    displayId: displaySubmissionId({ id: metaobject.id, handle: metaobject.handle }),
     createdAt: map.submitted_at || metaobject.updatedAt,
     customerId: map.customer_id || null,
     ip: map.ip || null,
     userAgent: map.user_agent || null,
-    fields:
-      fields && typeof fields === "object" && !Array.isArray(fields)
-        ? fields
-        : {},
-    files: Array.isArray(files) ? files : [],
-    fieldCount:
-      fields && typeof fields === "object" && !Array.isArray(fields)
-        ? Object.keys(fields).length
-        : 0,
-    fileCount: Array.isArray(files) ? files.length : 0,
+    name,
+    email,
+    phone,
+    source,
+    fields: safeFields,
+    files: safeFiles,
+    fieldCount: Object.keys(safeFields).length,
+    fileCount: safeFiles.length,
   };
+}
+
+async function fetchSubmissionBatch(admin, { after = null, first = SCAN_BATCH } = {}) {
+  const response = await admin.graphql(METAOBJECTS_LIST, {
+    variables: {
+      type: FORM_SUBMISSION_TYPE,
+      first,
+      after,
+    },
+  });
+  const json = await response.json();
+  if (json.errors?.length) {
+    throw new Error(json.errors.map((e) => e.message).join("; "));
+  }
+  const connection = json.data?.metaobjects;
+  return {
+    edges: connection?.edges || [],
+    pageInfo: connection?.pageInfo || {},
+  };
+}
+
+async function scanSubmissions(admin, { max = MAX_SCAN } = {}) {
+  /** @type {ReturnType<typeof normalizeSubmission>[]} */
+  const submissions = [];
+  let after = null;
+  let hasNext = true;
+
+  while (hasNext && submissions.length < max) {
+    const remaining = max - submissions.length;
+    const { edges, pageInfo } = await fetchSubmissionBatch(admin, {
+      after,
+      first: Math.min(SCAN_BATCH, remaining),
+    });
+    for (const edge of edges) {
+      const normalized = normalizeSubmission(edge.node);
+      if (normalized) submissions.push(normalized);
+    }
+    hasNext = Boolean(pageInfo.hasNextPage);
+    after = pageInfo.endCursor || null;
+    if (!edges.length) break;
+  }
+
+  return { submissions, truncated: hasNext };
+}
+
+function matchesSearch(submission, search) {
+  if (!search) return true;
+  const q = search.toLowerCase();
+  const haystacks = [
+    submission.displayId,
+    submission.formKey,
+    submission.formName,
+    submission.name,
+    submission.email,
+    submission.source,
+    submission.phone,
+    ...Object.values(submission.fields || {}),
+  ];
+  return haystacks.some((value) =>
+    String(value || "")
+      .toLowerCase()
+      .includes(q),
+  );
+}
+
+function matchesFilters(submission, { search, formKey, dateFrom, dateTo }) {
+  if (!matchesSearch(submission, search)) return false;
+  if (formKey && submission.formKey !== formKey) return false;
+  const created = new Date(submission.createdAt).getTime();
+  if (Number.isNaN(created)) return false;
+  if (dateFrom && created < dateFrom.getTime()) return false;
+  if (dateTo && created > dateTo.getTime()) return false;
+  return true;
+}
+
+function sortSubmissions(submissions, sort, order) {
+  const dir = order === "asc" ? 1 : -1;
+  const sorted = [...submissions];
+  sorted.sort((a, b) => {
+    let left;
+    let right;
+    if (sort === "name") {
+      left = (a.name || "").toLowerCase();
+      right = (b.name || "").toLowerCase();
+    } else if (sort === "form") {
+      left = (a.formName || "").toLowerCase();
+      right = (b.formName || "").toLowerCase();
+    } else {
+      left = new Date(a.createdAt).getTime();
+      right = new Date(b.createdAt).getTime();
+    }
+    if (left < right) return -1 * dir;
+    if (left > right) return 1 * dir;
+    return 0;
+  });
+  return sorted;
 }
 
 /**
@@ -244,47 +375,111 @@ export async function createSubmission(admin, {
 /**
  * @param {import("@shopify/shopify-app-react-router/server").AdminApiContext} admin
  */
-export async function listSubmissions(admin, { cursor = null, pageIndex = 0 } = {}) {
-  const response = await admin.graphql(METAOBJECTS_LIST, {
-    variables: {
-      type: FORM_SUBMISSION_TYPE,
-      first: PAGE_SIZE,
-      after: cursor || null,
-    },
-  });
+export async function listSubmissions(
+  admin,
+  {
+    page = 1,
+    limit = DEFAULT_PAGE_SIZE,
+    search = "",
+    formKey = "",
+    datePreset = "last30",
+    sort = "submitted_at",
+    order = "desc",
+  } = {},
+) {
+  const pageSize = Math.min(
+    MAX_PAGE_SIZE,
+    Math.max(1, Number(limit) || DEFAULT_PAGE_SIZE),
+  );
+  const pageNumber = Math.max(1, Number(page) || 1);
+  const { from: dateFrom, to: dateTo } = resolveDateRange(datePreset);
+  const cleanedSearch = String(search || "").trim().slice(0, 200);
+  const cleanedFormKey = String(formKey || "").trim();
 
+  const { submissions: scanned, truncated } = await scanSubmissions(admin);
+  const formKeys = [
+    ...new Set(
+      scanned.map((item) => item.formKey).filter((value) => Boolean(value)),
+    ),
+  ].sort((a, b) => a.localeCompare(b));
+
+  const filtered = scanned.filter((submission) =>
+    matchesFilters(submission, {
+      search: cleanedSearch,
+      formKey: cleanedFormKey,
+      dateFrom,
+      dateTo,
+    }),
+  );
+  const sorted = sortSubmissions(filtered, sort, order);
+  const total = sorted.length;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize) || 1);
+  const safePage = Math.min(pageNumber, totalPages);
+  const start = (safePage - 1) * pageSize;
+  const submissions = sorted.slice(start, start + pageSize);
+  const from = total === 0 ? 0 : start + 1;
+  const to = start + submissions.length;
+
+  return {
+    submissions,
+    formKeys,
+    filters: {
+      search: cleanedSearch,
+      formKey: cleanedFormKey,
+      datePreset,
+      sort,
+      order,
+    },
+    pagination: {
+      page: safePage,
+      limit: pageSize,
+      total,
+      totalPages,
+      from,
+      to,
+      truncated,
+      hasNext: safePage < totalPages,
+      hasPrev: safePage > 1,
+    },
+  };
+}
+
+/**
+ * @param {import("@shopify/shopify-app-react-router/server").AdminApiContext} admin
+ */
+export async function deleteSubmission(admin, id) {
+  if (!id || typeof id !== "string") {
+    throw new Error("Submission id is required");
+  }
+
+  const response = await admin.graphql(METAOBJECT_DELETE, {
+    variables: { id },
+  });
   const json = await response.json();
   if (json.errors?.length) {
     throw new Error(json.errors.map((e) => e.message).join("; "));
   }
+  const payload = json.data?.metaobjectDelete;
+  const errors = payload?.userErrors;
+  if (errors?.length) {
+    throw new Error(errors.map((e) => e.message).join("; "));
+  }
+  if (!payload?.deletedId) {
+    throw new Error("Failed to delete submission");
+  }
+  return payload.deletedId;
+}
 
-  const connection = json.data?.metaobjects;
-  const edges = connection?.edges || [];
-  const pageInfo = connection?.pageInfo || {};
-
-  const submissions = edges
-    .map((edge) => normalizeSubmission(edge.node))
-    .filter(Boolean);
-
-  const safePageIndex = Math.max(0, Number(pageIndex) || 0);
-  const from = submissions.length === 0 ? 0 : safePageIndex * PAGE_SIZE + 1;
-  const to = safePageIndex * PAGE_SIZE + submissions.length;
-
-  return {
-    submissions,
-    pagination: {
-      pageSize: PAGE_SIZE,
-      pageIndex: safePageIndex,
-      pageNumber: safePageIndex + 1,
-      from,
-      to,
-      count: submissions.length,
-      hasNext: Boolean(pageInfo.hasNextPage),
-      hasPrev: safePageIndex > 0,
-      endCursor: pageInfo.endCursor || null,
-      nextCursor: pageInfo.hasNextPage ? pageInfo.endCursor : null,
-    },
-  };
+/**
+ * @param {import("@shopify/shopify-app-react-router/server").AdminApiContext} admin
+ */
+export async function deleteSubmissions(admin, ids) {
+  const unique = [...new Set((ids || []).filter((id) => typeof id === "string"))];
+  const deleted = [];
+  for (const id of unique) {
+    deleted.push(await deleteSubmission(admin, id));
+  }
+  return deleted;
 }
 
 /**
