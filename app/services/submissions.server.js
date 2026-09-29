@@ -244,7 +244,7 @@ export async function createSubmission(admin, {
 /**
  * @param {import("@shopify/shopify-app-react-router/server").AdminApiContext} admin
  */
-export async function listSubmissions(admin, { cursor = null } = {}) {
+export async function listSubmissions(admin, { cursor = null, pageIndex = 0 } = {}) {
   const response = await admin.graphql(METAOBJECTS_LIST, {
     variables: {
       type: FORM_SUBMISSION_TYPE,
@@ -254,6 +254,10 @@ export async function listSubmissions(admin, { cursor = null } = {}) {
   });
 
   const json = await response.json();
+  if (json.errors?.length) {
+    throw new Error(json.errors.map((e) => e.message).join("; "));
+  }
+
   const connection = json.data?.metaobjects;
   const edges = connection?.edges || [];
   const pageInfo = connection?.pageInfo || {};
@@ -262,11 +266,21 @@ export async function listSubmissions(admin, { cursor = null } = {}) {
     .map((edge) => normalizeSubmission(edge.node))
     .filter(Boolean);
 
+  const safePageIndex = Math.max(0, Number(pageIndex) || 0);
+  const from = submissions.length === 0 ? 0 : safePageIndex * PAGE_SIZE + 1;
+  const to = safePageIndex * PAGE_SIZE + submissions.length;
+
   return {
     submissions,
     pagination: {
       pageSize: PAGE_SIZE,
+      pageIndex: safePageIndex,
+      pageNumber: safePageIndex + 1,
+      from,
+      to,
+      count: submissions.length,
       hasNext: Boolean(pageInfo.hasNextPage),
+      hasPrev: safePageIndex > 0,
       endCursor: pageInfo.endCursor || null,
       nextCursor: pageInfo.hasNextPage ? pageInfo.endCursor : null,
     },
