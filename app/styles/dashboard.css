@@ -1310,10 +1310,6 @@ body {
   padding: 22px 24px;
 }
 
-.cag-detail-card--responses {
-  padding-bottom: 8px;
-}
-
 .cag-detail-card__head {
   display: flex;
   align-items: center;
@@ -1392,9 +1388,20 @@ body {
   font-weight: 500;
 }
 
+.cag-detail-card--responses {
+  padding-bottom: 12px;
+}
+
+.cag-detail-card__count {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
 .cag-responses {
   display: flex;
   flex-direction: column;
+  gap: 0;
 }
 
 .cag-field {
@@ -1405,9 +1412,24 @@ body {
   border-bottom: 1px solid #eef0f5;
 }
 
+.cag-field--stack {
+  grid-template-columns: 1fr;
+  gap: 6px;
+  padding: 16px 0;
+}
+
 .cag-field--block {
   grid-template-columns: 1fr;
-  gap: 8px;
+  gap: 10px;
+}
+
+.cag-field--message {
+  margin: 8px 0;
+  padding: 16px 18px;
+  border: 1px solid #e5e9f4;
+  border-radius: 12px;
+  background: #f7f9ff;
+  border-bottom: 1px solid #e5e9f4;
 }
 
 .cag-field:last-child {
@@ -1415,22 +1437,27 @@ body {
 }
 
 .cag-field__label {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 650;
-  color: var(--text-secondary);
+  letter-spacing: 0.02em;
+  color: var(--text-muted);
 }
 
 .cag-field__body,
 .cag-field__value {
   font-size: 15px;
+  font-weight: 500;
   color: var(--text-primary);
   word-break: break-word;
+  line-height: 1.45;
 }
 
 .cag-field__long {
   margin: 0;
   white-space: pre-wrap;
-  line-height: 1.55;
+  line-height: 1.6;
+  font-weight: 450;
+  color: #202536;
 }
 
 .cag-field__badges {
@@ -1439,10 +1466,27 @@ body {
   gap: 8px;
 }
 
+.cag-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 7px 12px;
+  border-radius: 999px;
+  background: #eef2ff;
+  color: #1749c6;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.cag-chip--yes {
+  background: #e3f8ec;
+  color: #087443;
+}
+
 .cag-responses__files {
-  padding: 16px 0 8px;
+  padding: 18px 0 8px;
   border-top: 1px solid #eef0f5;
-  margin-top: 4px;
+  margin-top: 8px;
 }
 
 .cag-gallery {

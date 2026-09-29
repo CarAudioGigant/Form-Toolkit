@@ -23,12 +23,39 @@ const ALL_CUSTOMER_KEYS = new Set(
   ),
 );
 
+/**
+ * Unwrap technical keys like Contact[Onderwerp] → Onderwerp
+ */
+export function unwrapFieldKey(key) {
+  let current = String(key || "").trim();
+  if (!current) return "";
+
+  let match;
+  while ((match = current.match(/^[^\[]+\[(.+)\]$/))) {
+    current = match[1].trim();
+  }
+
+  current = current.replace(/^(contact|form|field)[_\-\s]+/i, "");
+  return current.trim() || String(key).trim();
+}
+
+function normalizeKeyToken(key) {
+  return unwrapFieldKey(key)
+    .toLowerCase()
+    .replace(/[\[\]_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function isCustomerKey(key) {
-  const lower = String(key || "").toLowerCase();
-  if (ALL_CUSTOMER_KEYS.has(lower)) return true;
-  return [...ALL_CUSTOMER_KEYS].some(
-    (candidate) => lower.includes(candidate) || candidate.includes(lower),
-  );
+  const token = normalizeKeyToken(key);
+  if (!token) return false;
+  if (ALL_CUSTOMER_KEYS.has(token.replace(/\s+/g, "_"))) return true;
+  if (ALL_CUSTOMER_KEYS.has(token)) return true;
+  return [...ALL_CUSTOMER_KEYS].some((candidate) => {
+    const c = candidate.replace(/_/g, " ");
+    return token === c || token.endsWith(` ${c}`) || token.startsWith(`${c} `);
+  });
 }
 
 export function extractCompany(fields) {
@@ -47,40 +74,73 @@ export function extractLanguage(fields) {
   return pickField(fields, CUSTOMER_KEY_GROUPS.language);
 }
 
-/**
- * Build customer rows — only include fields that have values.
- */
 export function buildCustomerRows(submission) {
   const fields = submission?.fields || {};
+  const flattened = {};
+  for (const [key, value] of Object.entries(fields)) {
+    flattened[key] = value;
+    flattened[unwrapFieldKey(key)] = value;
+    flattened[normalizeKeyToken(key)] = value;
+  }
+
   const rows = [
-    { key: "name", label: "Name", value: submission.name || extractName(fields) },
+    {
+      key: "name",
+      label: "Name",
+      value: submission.name || extractName(flattened) || extractName(fields),
+    },
     {
       key: "email",
       label: "Email",
-      value: submission.email || extractEmail(fields),
+      value: submission.email || extractEmail(flattened) || extractEmail(fields),
       type: "email",
     },
     {
       key: "phone",
       label: "Phone",
-      value: submission.phone || extractPhone(fields),
+      value: submission.phone || extractPhone(flattened) || extractPhone(fields),
       type: "phone",
     },
-    { key: "company", label: "Company", value: extractCompany(fields) },
+    {
+      key: "company",
+      label: "Company",
+      value: extractCompany(flattened) || extractCompany(fields),
+    },
     {
       key: "customerType",
       label: "Customer type",
-      value: extractCustomerType(fields),
+      value: extractCustomerType(flattened) || extractCustomerType(fields),
     },
-    { key: "location", label: "Location", value: extractLocation(fields) },
-    { key: "language", label: "Language", value: extractLanguage(fields) },
+    {
+      key: "location",
+      label: "Location",
+      value: extractLocation(flattened) || extractLocation(fields),
+    },
+    {
+      key: "language",
+      label: "Language",
+      value: extractLanguage(flattened) || extractLanguage(fields),
+    },
   ];
 
   return rows.filter((row) => Boolean(row.value));
 }
 
-function humanizeFieldKey(key) {
-  return humanizeFormKey(key);
+export function humanizeFieldKey(key) {
+  let label = unwrapFieldKey(key);
+  label = label.replace(/^interesse\s+/i, "");
+  label = label
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!label) return humanizeFormKey(key);
+
+  if (label === label.toLowerCase() || label === label.toUpperCase()) {
+    return humanizeFormKey(label);
+  }
+  return label;
 }
 
 function looksLikeEmail(value) {
@@ -107,7 +167,7 @@ function looksLikeDate(value) {
 
 function looksLikeMultiline(value) {
   const text = String(value || "");
-  return text.includes("\n") || text.length > 160;
+  return text.includes("\n") || text.length > 120;
 }
 
 function normalizeListValue(value) {
@@ -121,11 +181,28 @@ function normalizeListValue(value) {
   return null;
 }
 
-/**
- * Infer a renderable field descriptor from a raw key/value pair.
- */
+function isAffirmative(value) {
+  if (value === true) return true;
+  return /^(yes|true|ja|1|on|checked)$/i.test(String(value ?? "").trim());
+}
+
+function isNegative(value) {
+  if (value === false) return true;
+  return /^(no|false|nee|0|off)$/i.test(String(value ?? "").trim());
+}
+
+function isBooleanish(value) {
+  return (
+    typeof value === "boolean" ||
+    /^(yes|no|true|false|ja|nee|1|0|on|off|checked)$/i.test(
+      String(value ?? "").trim(),
+    )
+  );
+}
+
 export function inferResponseField(key, value) {
-  const lower = String(key || "").toLowerCase();
+  const unwrapped = unwrapFieldKey(key);
+  const lower = normalizeKeyToken(key);
   const stringValue =
     value == null
       ? ""
@@ -135,22 +212,26 @@ export function inferResponseField(key, value) {
           ? value.join(", ")
           : String(value);
 
-  if (isCustomerKey(key)) {
+  if (!stringValue.trim() && value !== 0 && value !== false) {
     return null;
   }
 
-  if (typeof value === "boolean" || /^(yes|no|true|false|ja|nee)$/i.test(stringValue.trim())) {
-    const normalized = String(value === true || /^(yes|true|ja)$/i.test(stringValue.trim())
-      ? "Yes"
-      : value === false || /^(no|false|nee)$/i.test(stringValue.trim())
-        ? "No"
-        : stringValue);
-    return {
-      key,
-      label: humanizeFieldKey(key),
-      type: "checkbox",
-      value: normalized,
-    };
+  if (isCustomerKey(key) || isCustomerKey(unwrapped)) {
+    return null;
+  }
+
+  if (isBooleanish(value) || isBooleanish(stringValue)) {
+    if (isNegative(value) || isNegative(stringValue)) {
+      return null;
+    }
+    if (isAffirmative(value) || isAffirmative(stringValue)) {
+      return {
+        key,
+        label: humanizeFieldKey(key),
+        type: "checkbox",
+        value: "Yes",
+      };
+    }
   }
 
   const list = normalizeListValue(value);
@@ -219,6 +300,8 @@ export function inferResponseField(key, value) {
     lower.includes("notes") ||
     lower.includes("opmerking") ||
     lower.includes("comment") ||
+    lower.includes("waar ben je naar") ||
+    lower.includes("zoek") ||
     looksLikeMultiline(stringValue)
   ) {
     return {
@@ -251,9 +334,43 @@ export function inferResponseField(key, value) {
 
 export function buildResponseFields(submission) {
   const fields = submission?.fields || {};
-  return Object.entries(fields)
+  const inferred = Object.entries(fields)
     .map(([key, value]) => inferResponseField(key, value))
     .filter(Boolean);
+
+  const result = [];
+  let yesBuffer = [];
+
+  const flushYes = () => {
+    if (yesBuffer.length === 0) return;
+    if (yesBuffer.length === 1) {
+      result.push({
+        ...yesBuffer[0],
+        type: "checkbox",
+        value: "Yes",
+      });
+    } else {
+      result.push({
+        key: `grouped-yes-${yesBuffer[0].key}`,
+        label: "Selected options",
+        type: "chips",
+        value: yesBuffer.map((item) => item.label),
+      });
+    }
+    yesBuffer = [];
+  };
+
+  for (const field of inferred) {
+    if (field.type === "checkbox" && field.value === "Yes") {
+      yesBuffer.push(field);
+      continue;
+    }
+    flushYes();
+    result.push(field);
+  }
+  flushYes();
+
+  return result;
 }
 
 export function formatDetailTimestamp(value) {

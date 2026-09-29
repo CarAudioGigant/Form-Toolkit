@@ -56,13 +56,14 @@ export function SubmissionField({ field }) {
       body = <p className="cag-field__long">{value || "—"}</p>;
       break;
     case "checkbox":
-      body = <span className="cag-field__value">{value || "—"}</span>;
+      body = <span className="cag-chip cag-chip--yes">Yes</span>;
       break;
+    case "chips":
     case "multiselect":
       body = (
         <div className="cag-field__badges">
           {(Array.isArray(value) ? value : [value]).filter(Boolean).map((item) => (
-            <span className="cag-badge cag-badge--other" key={item}>
+            <span className="cag-chip" key={item}>
               {item}
             </span>
           ))}
@@ -80,8 +81,15 @@ export function SubmissionField({ field }) {
       break;
   }
 
+  const block =
+    type === "textarea" || type === "chips" || type === "multiselect";
+
   return (
-    <div className={`cag-field${type === "textarea" ? " cag-field--block" : ""}`}>
+    <div
+      className={`cag-field cag-field--stack${block ? " cag-field--block" : ""}${
+        type === "textarea" ? " cag-field--message" : ""
+      }`}
+    >
       <div className="cag-field__label">{label}</div>
       <div className="cag-field__body">{body}</div>
     </div>
@@ -232,6 +240,14 @@ export function FormResponsesCard({ fields, files }) {
     <section className="cag-detail-card cag-detail-card--responses">
       <header className="cag-detail-card__head">
         <h2 className="cag-detail-card__title">Form responses</h2>
+        {!empty ? (
+          <span className="cag-detail-card__count">
+            {fields.length} field{fields.length === 1 ? "" : "s"}
+            {images.length || documents.length
+              ? ` · ${(files || []).length} file${(files || []).length === 1 ? "" : "s"}`
+              : ""}
+          </span>
+        ) : null}
       </header>
 
       {empty ? (
