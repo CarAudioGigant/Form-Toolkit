@@ -44,7 +44,7 @@ Storefront helper: [`public/forms-gateway.js`](../public/forms-gateway.js)
          ▼                                              ▼
 ┌─────────────────┐                          ┌──────────────────────┐
 │  Staged storage │                          │  Shopify Files CDN   │
-└─────────────────┘                          │  + Prisma submissions│
+└─────────────────┘                          │  + Metaobject submissions│
                                              └──────────────────────┘
 ```
 
@@ -160,11 +160,11 @@ POST /apps/forms/submit
         │
         ▼
 App → fileCreate for each resourceUrl
-App → Prisma FormSubmission + FormSubmissionFile
+App → metaobjectCreate ($app:form_submission)
         │
         ▼
 JSON { ok: true, id, fileCount }
-Admin UI lists submission under Submissions
+Admin UI lists metaobject submissions
 ```
 
 Shopify Files processing is asynchronous. Immediately after `fileCreate`, `fileStatus` may be `PROCESSING`. URLs may become fully available shortly after; the admin detail page shows whatever URL was returned at create time (or a “not ready” message).
@@ -313,7 +313,7 @@ Example:
 
 | Field | Description |
 |-------|-------------|
-| `id` | Prisma submission id (use in admin deep links) |
+| `id` | Metaobject GID (use in admin deep links) |
 | `fileCount` | Number of files attached |
 
 #### Captured automatically
@@ -562,34 +562,18 @@ Files open via Shopify CDN URLs when available. Images show a thumbnail.
 
 ## 13. Data model
 
-### `FormSubmission`
+Submissions are **Shopify metaobjects** of type `$app:form_submission` (declared in `shopify.app.toml`).
 
-| Column | Type | Notes |
-|--------|------|-------|
-| `id` | string (cuid) | Primary key |
-| `shop` | string | Myshopify domain |
-| `formKey` | string | From `form_key` |
-| `fields` | string | JSON-encoded object |
-| `customerId` | string? | Logged-in customer |
-| `ip` | string? | |
-| `userAgent` | string? | |
-| `createdAt` | datetime | |
+| Field | Type | Notes |
+|-------|------|-------|
+| `form_key` | single_line_text | Form identifier |
+| `fields_json` | json | Arbitrary non-file field map |
+| `files_json` | json | Uploaded file metadata + Shopify File GIDs/URLs |
+| `customer_id` | single_line_text | Optional logged-in customer |
+| `submitted_at` | date_time | ISO timestamp |
+| `ip` / `user_agent` | single_line_text | Request metadata |
 
-### `FormSubmissionFile`
-
-| Column | Type | Notes |
-|--------|------|-------|
-| `id` | string (cuid) | |
-| `submissionId` | string | FK → FormSubmission |
-| `fieldName` | string | Form input name |
-| `filename` | string | |
-| `mimeType` | string | |
-| `size` | int | Bytes |
-| `shopifyFileId` | string | GID e.g. `gid://shopify/MediaImage/...` |
-| `url` | string | CDN / resource URL |
-| `createdAt` | datetime | |
-
-Schema: `prisma/schema.prisma`
+Prisma is used **only** for Shopify OAuth `Session` storage.
 
 ---
 
