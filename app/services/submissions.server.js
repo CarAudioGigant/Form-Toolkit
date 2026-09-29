@@ -423,6 +423,7 @@ export async function listSubmissions(
   return {
     submissions,
     formKeys,
+    totalAll: scanned.length,
     filters: {
       search: cleanedSearch,
       formKey: cleanedFormKey,

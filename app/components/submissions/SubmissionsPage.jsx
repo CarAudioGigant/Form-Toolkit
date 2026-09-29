@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useFetcher, useNavigation, useSearchParams } from "react-router";
+import { InitialEmptyState, NoMatchingEmptyState } from "./EmptyStates";
 import {
   buildPageItems,
   DATE_PRESETS,
@@ -42,22 +43,44 @@ function RefreshIcon() {
   );
 }
 
-function DocumentIcon() {
+function CalendarIcon() {
   return (
-    <svg width="40" height="40" viewBox="0 0 40 40" fill="none" aria-hidden="true">
+    <svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden="true">
       <rect
-        x="9"
-        y="6"
-        width="22"
-        height="28"
-        rx="3"
+        x="3.5"
+        y="4.5"
+        width="13"
+        height="12"
+        rx="2"
         stroke="currentColor"
-        strokeWidth="1.8"
+        strokeWidth="1.5"
       />
       <path
-        d="M15 15h10M15 21h10M15 27h6"
+        d="M3.5 8.5h13M7 3v3M13 3v3"
         stroke="currentColor"
-        strokeWidth="1.8"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function FormFilterIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <rect
+        x="4"
+        y="3"
+        width="12"
+        height="14"
+        rx="2"
+        stroke="currentColor"
+        strokeWidth="1.5"
+      />
+      <path
+        d="M7 7.5h6M7 10.5h6M7 13.5h4"
+        stroke="currentColor"
+        strokeWidth="1.5"
         strokeLinecap="round"
       />
     </svg>
@@ -283,6 +306,7 @@ export function SubmissionsPage({
   pagination,
   filters,
   formKeys,
+  totalAll = 0,
   selectedSubmission,
   error,
 }) {
@@ -300,6 +324,11 @@ export function SubmissionsPage({
       (filters.formKey && filters.formKey !== "") ||
       (filters.datePreset && filters.datePreset !== "last30"),
   );
+
+  const isInitialEmpty = !error && !loading && totalAll === 0;
+  const isFilteredEmpty =
+    !error && !loading && totalAll > 0 && pagination.total === 0;
+  const toolbarDisabled = isInitialEmpty;
 
   useEffect(() => {
     setQuery(filters.search || "");
@@ -384,21 +413,18 @@ export function SubmissionsPage({
     setSearchParams(new URLSearchParams());
   };
 
-  const emptyAll =
-    pagination.total === 0 && !filtersActive && !filters.search;
-  const emptyFiltered = pagination.total === 0 && !emptyAll;
-
   return (
     <>
       <header>
         <h1 className="cag-page-title">Form submissions</h1>
         <p className="cag-page-desc">
-          Submissions from storefront Liquid forms via the app proxy gateway.
+          Submissions from your storefront Liquid forms via the app proxy
+          gateway.
         </p>
       </header>
 
-      <section className="cag-card">
-        <div className="cag-toolbar">
+      <section className={`cag-card${isInitialEmpty ? " cag-card--empty" : ""}`}>
+        <div className={`cag-toolbar${toolbarDisabled ? " is-disabled" : ""}`}>
           <div className="cag-search">
             <span className="cag-search__icon">
               <SearchIcon />
@@ -410,44 +436,60 @@ export function SubmissionsPage({
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Search submissions..."
               aria-label="Search submissions"
+              disabled={toolbarDisabled}
             />
           </div>
 
-          <select
-            className="cag-select"
-            value={filters.datePreset || "last30"}
-            aria-label="Date filter"
-            onChange={(event) =>
-              updateParam({ date: event.target.value, page: null })
-            }
-          >
-            {DATE_PRESETS.map((preset) => (
-              <option key={preset.value} value={preset.value}>
-                {preset.label}
-              </option>
-            ))}
-          </select>
+          <label className="cag-select-wrap">
+            <span className="cag-select-wrap__icon">
+              <CalendarIcon />
+            </span>
+            <select
+              className="cag-select cag-select--icon"
+              value={filters.datePreset || "last30"}
+              aria-label="Date filter"
+              disabled={toolbarDisabled}
+              onChange={(event) =>
+                updateParam({ date: event.target.value, page: null })
+              }
+            >
+              {DATE_PRESETS.map((preset) => (
+                <option key={preset.value} value={preset.value}>
+                  {preset.label}
+                </option>
+              ))}
+            </select>
+          </label>
 
-          <select
-            className="cag-select"
-            value={filters.formKey || ""}
-            aria-label="Form filter"
-            onChange={(event) =>
-              updateParam({ form: event.target.value || null, page: null })
-            }
-          >
-            <option value="">All forms</option>
-            {formKeys.map((key) => (
-              <option key={key} value={key}>
-                {humanizeFormKey(key)}
-              </option>
-            ))}
-          </select>
+          <label className="cag-select-wrap">
+            <span className="cag-select-wrap__icon">
+              <FormFilterIcon />
+            </span>
+            <select
+              className="cag-select cag-select--icon"
+              value={filters.formKey || ""}
+              aria-label="Form filter"
+              disabled={toolbarDisabled}
+              onChange={(event) =>
+                updateParam({ form: event.target.value || null, page: null })
+              }
+            >
+              <option value="">All forms</option>
+              {formKeys.map((key) => (
+                <option key={key} value={key}>
+                  {humanizeFormKey(key)}
+                </option>
+              ))}
+            </select>
+          </label>
 
           <button
             type="button"
-            className={`cag-btn cag-btn--ghost${filtersActive ? "" : " is-muted"}`}
+            className={`cag-btn cag-btn--ghost${
+              filtersActive && !toolbarDisabled ? "" : " is-muted"
+            }`}
             onClick={clearFilters}
+            disabled={toolbarDisabled}
           >
             <RefreshIcon />
             Clear filters
@@ -482,18 +524,20 @@ export function SubmissionsPage({
         ) : null}
 
         {error ? (
-          <div className="cag-state">
-            <h2 className="cag-state__title">Unable to load submissions</h2>
-            <p className="cag-state__text">
+          <div className="cag-empty cag-empty--compact">
+            <h2 className="cag-empty__title cag-empty__title--sm">
+              Unable to load submissions
+            </h2>
+            <p className="cag-empty__text">
               Something went wrong while loading your submissions.
             </p>
-            <div className="cag-state__actions">
+            <div className="cag-empty__actions">
               <Link className="cag-btn cag-btn--primary" to="/app">
                 Try again
               </Link>
             </div>
           </div>
-        ) : loading && submissions.length === 0 ? (
+        ) : loading && submissions.length === 0 && totalAll === 0 ? (
           <div className="cag-table-wrap">
             <table className="cag-table">
               <tbody>
@@ -507,34 +551,10 @@ export function SubmissionsPage({
               </tbody>
             </table>
           </div>
-        ) : emptyAll ? (
-          <div className="cag-state">
-            <div className="cag-state__icon">
-              <DocumentIcon />
-            </div>
-            <h2 className="cag-state__title">No submissions yet</h2>
-            <p className="cag-state__text">
-              Submissions from your storefront forms will appear here once
-              customers submit them.
-            </p>
-            <div className="cag-state__actions">
-              <Link className="cag-btn cag-btn--primary" to="/app/installation">
-                View installation guide
-              </Link>
-            </div>
-          </div>
-        ) : emptyFiltered ? (
-          <div className="cag-state">
-            <h2 className="cag-state__title">No matching submissions</h2>
-            <p className="cag-state__text">
-              Try changing your search or filters.
-            </p>
-            <div className="cag-state__actions">
-              <button type="button" className="cag-btn" onClick={clearFilters}>
-                Clear filters
-              </button>
-            </div>
-          </div>
+        ) : isInitialEmpty ? (
+          <InitialEmptyState />
+        ) : isFilteredEmpty ? (
+          <NoMatchingEmptyState onClear={clearFilters} />
         ) : (
           <>
             <div className="cag-table-wrap">

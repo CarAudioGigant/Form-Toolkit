@@ -46,6 +46,7 @@ export const loader = async ({ request }) => {
     return {
       submissions: [],
       formKeys: [],
+      totalAll: 0,
       filters: {
         search,
         formKey,
@@ -100,6 +101,7 @@ export default function SubmissionsIndex() {
       pagination={data.pagination}
       filters={data.filters}
       formKeys={data.formKeys}
+      totalAll={data.totalAll}
       selectedSubmission={data.selectedSubmission}
       error={data.error}
     />
